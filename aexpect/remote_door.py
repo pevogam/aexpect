@@ -70,9 +70,9 @@ import time
 # related to connectivity and perform further development on the this utility.
 # os.environ["PYRO_LOGLEVEL"] = "DEBUG"
 try:
-    import Pyro4
+    from Pyro5.compatibility import Pyro4 as pyro
 except ImportError:
-    logging.warning("Remote object backend (Pyro4) not found, some functionality"
+    logging.warning("Remote object backend (Pyro5) not found, some functionality"
                     " of the remote door will not be available")
 
 # NOTE: disable aexpect importing on the remote side if not available as the
@@ -405,24 +405,24 @@ def set_subcontrol_parameter_object(subcontrol, value):
         raise ValueError("No IP of the host machine was found")
 
     logging.info("Sharing the test parameters over the network")
-    Pyro4.config.AUTOPROXY = False
-    Pyro4.config.REQUIRE_EXPOSE = False
+    pyro.config.AUTOPROXY = False
+    pyro.config.REQUIRE_EXPOSE = False
     try:
-        pyro_daemon = Pyro4.Daemon(host=host_ip, port=1437)
-        logging.debug("Pyro4 daemon started successfully")
+        pyro_daemon = pyro.Daemon(host=host_ip, port=1437)
+        logging.debug("PyRO daemon started successfully")
         uri = pyro_daemon.register(params)
         pyrod_running = False
     # address already in use OS error
     except OSError:
-        pyro_daemon = Pyro4.Proxy("PYRO:" + Pyro4.constants.DAEMON_NAME +
-                                  "@" + host_ip + ":1437")
+        pyro_daemon = pyro.Proxy("PYRO:" + pyro.constants.DAEMON_NAME +
+                                 "@" + host_ip + ":1437")
         pyro_daemon.ping()
         registered = pyro_daemon.registered()
-        logging.debug("Pyro4 daemon already started, available objects: %s",
+        logging.debug("PyRO daemon already started, available objects: %s",
                       registered)
-        assert len(registered) == 2, "The Pyro4 deamon should contain only two"\
+        assert len(registered) == 2, "The PyRO deamon should contain only two"\
                                      " initially registered objects"
-        assert registered[0] == "Pyro.Daemon", "The Pyro4 deamon must be first"\
+        assert registered[0] == "Pyro.Daemon", "The PyRO deamon must be first"\
                                                " registered object"
         uri = "PYRO:" + registered[1] + "@" + host_ip + ":1437"
         pyrod_running = True
@@ -451,14 +451,14 @@ class DaemonLoop(threading.Thread):
         Contruct the Pyro daemon thread.
 
         :param pyro_daemon: daemon for the remote python objects
-        :type pyro_daemon: Pyro4.Daemon object
+        :type pyro_daemon: pyro.Daemon object
         """
         super().__init__()
         self.pyro_daemon = pyro_daemon
         self.daemon = True     # make this a Daemon Thread
 
     def run(self):
-        """Run the Pyro4 daemon thread."""
+        """Run the PyRO daemon thread."""
         self.pyro_daemon.requestLoop()
 
 
@@ -475,7 +475,7 @@ def get_remote_object(object_name, session=None, host="localhost", port=9090):
     :param str host: ip address of the local sharing server
     :param int port: port of the local name server
     :returns: proxy version of the remote object
-    :rtype: Pyro4.Proxy
+    :rtype: pyro.Proxy
 
     If `session` is not `None`, you will not be able to use it after this call
     since it is reserved for communication with the remote object. For example,
@@ -498,9 +498,9 @@ def get_remote_object(object_name, session=None, host="localhost", port=9090):
     work because the remote door takes care to reach back the local one.
     """
     try:
-        remote_object = Pyro4.Proxy("PYRONAME:" + object_name + "@" + host + ":" + str(port))
+        remote_object = pyro.Proxy("PYRONAME:" + object_name + "@" + host + ":" + str(port))
         remote_object._pyroBind()
-    except Pyro4.errors.PyroError as error:
+    except pyro.errors.PyroError as error:
         if not session:
             raise
 
@@ -517,9 +517,9 @@ def get_remote_object(object_name, session=None, host="localhost", port=9090):
         else:
             raise OSError("Local object sharing failed:\n%s" % output) from error
         logging.debug("Local object sharing output:\n%s", output)
-        logging.getLogger("Pyro4").setLevel(10)
+        logging.getLogger("Pyro5").setLevel(10)
 
-        remote_object = Pyro4.Proxy("PYRONAME:" + object_name + "@" + host + ":" + str(port))
+        remote_object = pyro.Proxy("PYRONAME:" + object_name + "@" + host + ":" + str(port))
         remote_object._pyroBind()
     return remote_object
 
@@ -534,19 +534,19 @@ def get_remote_objects(session=None, host="localhost", port=0):
     :param str host: ip address of the local sharing server
     :param int port: port of the local sharing server
     :returns: proxy version of the remote objects
-    :rtype: Pyro4.Proxy
+    :rtype: pyro.Proxy
 
     This method does not rely on any static (template) controls in order to
     work because the remote door takes care to reach back the local one.
     """
-    Pyro4.config.SERIALIZER = "pickle"
-    Pyro4.config.PICKLE_PROTOCOL_VERSION = 3
-    from Pyro4.utils import flame
+    pyro.config.SERIALIZER = "pickle"
+    pyro.config.PICKLE_PROTOCOL_VERSION = 3
+    from pyro.utils import flame
 
     try:
         remote_objects = flame.connect(host + ":" + str(port))
         remote_objects._pyroBind()
-    except Pyro4.errors.PyroError as error:
+    except pyro.errors.PyroError as error:
         if not session:
             raise
 
@@ -586,34 +586,34 @@ def share_local_object(object_name, whitelist=None, host="localhost", port=9090)
     custom implementation. It is more secure but more limited as functionality
     since it requires serialization extensions.
     """
-    Pyro4.config.AUTOPROXY = True
-    Pyro4.config.REQUIRE_EXPOSE = False
+    pyro.config.AUTOPROXY = True
+    pyro.config.REQUIRE_EXPOSE = False
     port = int(port) if isinstance(port, str) else port
 
     # pyro daemon
     try:
-        pyro_daemon = Pyro4.Daemon(host=host)
-        logging.debug("Pyro4 daemon started successfully")
+        pyro_daemon = pyro.Daemon(host=host)
+        logging.debug("PyRO daemon started successfully")
         pyrod_running = False
     # address already in use OS error
     except OSError:
-        pyro_daemon = Pyro4.Proxy("PYRO:" + Pyro4.constants.DAEMON_NAME + "@" + host)
+        pyro_daemon = pyro.Proxy("PYRO:" + pyro.constants.DAEMON_NAME + "@" + host)
         pyro_daemon.ping()
-        logging.debug("Pyro4 daemon already started, available objects: %s",
+        logging.debug("PyRO daemon already started, available objects: %s",
                       pyro_daemon.registered())
         pyrod_running = True
 
     # name server
     try:
-        ns_server = Pyro4.locateNS(host=host, port=port)
-        logging.debug("Pyro4 name server already started")
+        ns_server = pyro.locateNS(host=host, port=port)
+        logging.debug("PyRO name server already started")
         nsd_running = True
     # network unreachable and failed to locate the nameserver error
-    except (OSError, Pyro4.errors.NamingError):
-        from Pyro4 import naming
+    except (OSError, pyro.errors.NamingError):
+        from pyro import naming
         ns_uri, ns_daemon, _bc_server = naming.startNS(host=host, port=port)
-        ns_server = Pyro4.Proxy(ns_uri)
-        logging.debug("Pyro4 name server started successfully with URI %s", ns_uri)
+        ns_server = pyro.Proxy(ns_uri)
+        logging.debug("PyRO name server started successfully with URI %s", ns_uri)
         nsd_running = False
 
     # main retrieval of the local object
@@ -681,16 +681,16 @@ def share_local_objects(wait=False, host="localhost", port=0):
     This function shares all possible python code (dangerous) and not
     just a custom object with whitelisted attributes (secure).
     """
-    Pyro4.config.FLAME_ENABLED = True
-    Pyro4.config.SERIALIZER = "pickle"
-    Pyro4.config.SERIALIZERS_ACCEPTED = {"pickle"}
+    pyro.config.FLAME_ENABLED = True
+    pyro.config.SERIALIZER = "pickle"
+    pyro.config.SERIALIZERS_ACCEPTED = {"pickle"}
 
     # pyro daemon
-    pyro_daemon = Pyro4.Daemon(host=host, port=port)
-    logging.debug("Pyro4 daemon started successfully")
+    pyro_daemon = pyro.Daemon(host=host, port=port)
+    logging.debug("PyRO daemon started successfully")
 
     # main retrieval of the local objects
-    from Pyro4.utils import flame
+    from pyro.utils import flame
     _uri = flame.start(pyro_daemon)  # lgtm [py/unused-local-variable]
 
     # request loop
@@ -735,7 +735,7 @@ def share_remote_objects(session, control_path, host="localhost", port=9090,
 
     # setup remote objects server
     logging.info("Starting nameserver for the remote objects")
-    cmd = "python -m Pyro4.naming -n %s -p %s" % (host, port)
+    cmd = "python -m Pyro5.naming -n %s -p %s" % (host, port)
     session.cmd("START " + cmd if os_type == "windows" else cmd + " &")
 
     logging.info("Starting the server daemon for the remote objects")
@@ -774,8 +774,9 @@ def share_remote_objects(session, control_path, host="localhost", port=9090,
         attempts -= 1
         time.sleep(1)
 
-    Pyro4.config.NS_HOST = host
+    pyro.config.NS_HOST = host
     logging.getLogger("Pyro4").setLevel(10)
+    logging.getLogger("Pyro5").setLevel(10)
     return middleware_session
 
 
@@ -831,4 +832,4 @@ def import_remote_exceptions(exceptions=None, modules=None):
         return exception
 
     for exception in exceptions:
-        Pyro4.util.SerializerBase.register_dict_to_class(exception, recreate_exception)
+        pyro.util.SerializerBase.register_dict_to_class(exception, recreate_exception)

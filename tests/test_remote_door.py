@@ -146,9 +146,9 @@ class RemoteDoorTest(unittest.TestCase):
         """Test that a remote object can be retrieved properly."""
         self.session = mock.MagicMock(name='session')
         self.session.client = "ssh"
-        remote_door.Pyro4 = mock.MagicMock()
-        disconnect = remote_door.Pyro4.errors.PyroError = Exception
-        remote_door.Pyro4.Proxy.side_effect = [disconnect("no such object"), mock.DEFAULT]
+        remote_door.Pyro5 = mock.MagicMock()
+        disconnect = remote_door.Pyro5.errors.PyroError = Exception
+        remote_door.Pyro5.Proxy.side_effect = [disconnect("no such object"), mock.DEFAULT]
         self.session.get_output.return_value = "Local object sharing ready\n"
         self.session.get_output.return_value += "RESULT = None\n"
 
@@ -184,7 +184,7 @@ class RemoteDoorTest(unittest.TestCase):
         """Test that a remote object can be shared properly and remotely."""
         self.session = mock.MagicMock(name='session')
         self.session.client = "ssh"
-        remote_door.Pyro4 = mock.MagicMock()
+        remote_door.Pyro5 = mock.MagicMock()
 
         control_file = os.path.join(remote_door.REMOTE_CONTROL_DIR,
                                     "tmpxxxxxxxx.control")
@@ -202,16 +202,16 @@ class RemoteDoorTest(unittest.TestCase):
         else:
             self.assertEqual(self.session.cmd.call_count, 1)
         command = self.session.cmd.call_args[0][0]
-        self.assertEqual("python -m Pyro4.naming -n testhost -p 4242 &", command)
+        self.assertEqual("python -m Pyro5.naming -n testhost -p 4242 &", command)
 
     def test_import_remote_exceptions(self):
         """Test that selected remote exceptions are properly imported and deserialized."""
-        remote_door.Pyro4 = mock.MagicMock()
+        remote_door.Pyro5 = mock.MagicMock()
         preselected_exceptions = ["aexpect.remote.RemoteError",
                                   "aexpect.remote.LoginError",
                                   "aexpect.remote.TransferError"]
         remote_door.import_remote_exceptions(preselected_exceptions)
-        register_method = remote_door.Pyro4.util.SerializerBase.register_dict_to_class
+        register_method = remote_door.Pyro5.util.SerializerBase.register_dict_to_class
         self.assertEqual(len(register_method.mock_calls), 3)
 
         def get_first_arg(call):
