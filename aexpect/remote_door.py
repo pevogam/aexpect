@@ -103,7 +103,7 @@ REMOTE_CONTROL_DIR = "/tmp"
 #: default location for remote control logging
 REMOTE_CONTROL_LOG = "/tmp/control.log"
 #: python binary to use for remote door running
-REMOTE_PYTHON_BINARY = "python3"
+REMOTE_PYTHON_BINARY = "/usr/bin/python3.7"
 #: default path for remote utility python path
 REMOTE_PYTHON_PATH = "/tmp/utils"
 
