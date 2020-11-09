@@ -69,15 +69,17 @@ else:
 # Need this import for sphinx and other documentation to produce links later on
 # from .client import ShellSession
 
+from aexpect.exceptions import ShellCmdError
+
 
 ###############################################################################
 # grep(1)
 ###############################################################################
 
-GREP_FLAGS_KNOWN = ["a", "r", "v"]
+GREP_FLAGS_KNOWN = ["q", "a", "r", "v"]
 
 
-def grep(session, expr, path, flags=None):
+def grep(session, expr, path, check=True, flags=None):
     """
     Invoke ``grep`` on guest searching for *expr* in *path*. Throws a
     ``TypeError`` in case the API assumptions are violated.
@@ -86,129 +88,22 @@ def grep(session, expr, path, flags=None):
     :type session: ShellSession
     :param str expr: search expression
     :param str path: file to search
+    :param bool check: whether to quietly run grep for a boolean check
     :param str flags: extra flags passed to ``grep`` on the command line
-    :returns: what ``grep`` emits on stdout
-    :rtype: str
+    :returns: whether there is a match or not or what ``grep`` emits on stdout
+              if the check mode is disabled
+    :rtype: bool or str
     """
-    if flags is not None:
-        extra = ["-" + flag for flag in flags if flag in GREP_FLAGS_KNOWN]
-        if extra:
-            return session.cmd("grep -a %s '%s' '%s'"
-                               % (" ".join(extra), expr, path))
-
-    return session.cmd("grep -a '%s' '%s'" % (expr, path))
-
-
-def grep_r(session, expr, path):
-    """
-    Invoke ``grep(1)`` on guest searching for *expr* recursively in *path*.
-
-    :param session: session to run the command on
-    :type session: ShellSession
-    :param str expr: search expression
-    :param str path: file to search
-    :returns: standard output of grep
-    :rtype: str
-    """
-    return grep(session, expr, path, flags=["r"])
-
-
-def grep_v(session, expr, path):
-    """
-    Invoke ``grep(1)`` on guest searching for the complement of *expr* in
-    <path>.
-
-    :param session: session to run the command on
-    :type session: ShellSession
-    :param str expr: search expression
-    :param str path: file to search
-    :returns: standard output of grep
-    :rtype: str
-    """
-    return grep(session, expr, path, flags=["v"])
-
-
-def grep_vr(session, expr, path):
-    """
-    Invoke ``grep(1)`` on guest searching for the complement of *expr*
-    recursively in *path*.
-
-    :param session: session to run the command on
-    :type session: ShellSession
-    :param str expr: search expression
-    :param str path: file to search
-    :returns: standard output of grep
-    :rtype: str
-    """
-    return grep(session, expr, path, flags=["v", "r"])
-
-
-def grep_q(session, expr, path, flags=None):
-    """
-    Invoke ``grep(1)`` on guest in silent mode searching for *expr* in *path*.
-
-    :param session: session to run the command on
-    :type session: ShellSession
-    :param str expr: search expression
-    :param str path: file to search
-    :param str flags: extra flags passed to ``grep`` on the command line
-    :returns: whether there is a match or not
-    :rtype: bool
-    """
-    if flags is not None:
-        extra = ["-" + flag for flag in flags if flag in GREP_FLAGS_KNOWN]
-        flagstr = " ".join(extra)
-        if extra:
-            return session.cmd("grep -a -q %s '%s' '%s' && echo yes || "
-                               "echo notreally" % (flagstr, expr, path))
-
-    return session.cmd("grep -a -q '%s' '%s' && echo yes || echo notreally"
-                       % (expr, path)).strip() == "yes"
-
-
-def grep_qv(session, expr, path):
-    """
-    Invoke ``grep(1)`` on guest in silent mode searching for the complement of
-    *expr* in *path*.
-
-    :param session: session to run the command on
-    :type session: ShellSession
-    :param str expr: search expression
-    :param str path: file to search
-    :returns: whether there is no match
-    :rtype: bool
-    """
-    return grep_q(session, expr, path, flags=["v"])
-
-
-def grep_qr(session, expr, path):
-    """
-    Invoke ``grep(1)`` on guest in silent mode searching for the complement of
-    *expr* recursively in *path*.
-
-    :param session: session to run the command on
-    :type session: ShellSession
-    :param str expr: search expression
-    :param str path: file to search
-    :returns: whether there is a match or not
-    :rtype: bool
-    """
-    return grep_q(session, expr, path, flags=["r"])
-
-
-def grep_qvr(session, expr, path):
-    """
-    Invoke ``grep(1)`` on guest in silent mode searching for the complement of
-    *expr* recursively in *path*.
-
-    :param session: session to run the command on
-    :type session: ShellSession
-    :param str expr: search expression
-    :param str path: file to search
-    :returns: whether there is no match
-    :rtype: bool
-    """
-    return grep_q(session, expr, path, flags=["v", "r"])
+    flags = flags if flags else ["a"]
+    flagstr = " ".join(["-" + flag for flag in flags if flag in GREP_FLAGS_KNOWN])
+    grep_command = "grep %s '%s' '%s'" % (flagstr, expr, path)
+    status, output = session.cmd_status_output(grep_command)
+    if check:
+        return status == 0
+    else:
+        if status != 0:
+            raise ShellCmdError(grep_command, status, output)
+        return output
 
 
 ###############################################################################
