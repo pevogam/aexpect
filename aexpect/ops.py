@@ -26,7 +26,8 @@ environment (i. e. Cygwin) is present.
 
 This module aims to provide convenient wrappers for butter-and-bread
 functionality on a Linux system. Currently, the implemented functions fall
-under a few categories: ``stat``, ``test``, common file ops, and utilities.
+under a few categories: ``stat``, ``test``, common file ops, common utilities,
+and system utilities.
 
 stat:
 Allows passing an optional format argument (``-c``). Custom wrappers for
@@ -43,6 +44,9 @@ message. All functions :py:func:`shlex.quote` their args for better security.
 
 utilities:
 More complex linux utilities for tarball extraction, file hashing, etc.
+
+system:
+System related operations like restarting or stopping services.
 """
 
 import logging
@@ -509,3 +513,97 @@ def extract_tarball(session, tarball, target_dir):
     if status != 0:
         raise RuntimeError('Failed to extract {} to {}: {}'
                            .format(tarball, target_dir, output))
+
+
+###############################################################################
+# system
+###############################################################################
+
+
+def start_services(session, service_list):
+    """
+    Try starting all services in given list.
+
+    :param session: virtual machine session
+    :type session: :py:class:`aexpect.ShellSession`
+    :param services: list of services to modify
+    :type services: [str]
+    :returns: statuses for each modified service
+    :rtype: [int]
+    """
+    statuses = []
+    for service in service_list:
+        status = session.cmd_status('service %s status' % service)
+        if status == 0:      # is running --> skip
+            logging.debug('Service %s already started - skipping', service)
+        elif status == 3:    # is stopped --> ok
+            logging.debug('Service %s stopped - starting', service)
+            status = session.cmd_status('service %s start' % service)
+        else:                # not sure, try restarting
+            logging.debug('Querying status for service %s resulted in '
+                          'unexpected return code %s. Try starting it',
+                          service, status)
+            status = session.cmd_status('service %s start' % service)
+        logging.debug('Starting service %s resulted in status %s',
+                      service, status)
+        statuses += [status]
+    return statuses
+
+
+def stop_services(session, services):
+    """
+    Try stopping all services in given list.
+
+    :param session: virtual machine session
+    :type session: :py:class:`aexpect.ShellSession`
+    :param services: list of services to modify
+    :type services: [str]
+    :returns: statuses for each modified service
+    :rtype: [int]
+    """
+    statuses = []
+    for service in services:
+        status = session.cmd_status('service %s status' % service)
+        if status == 0:      # is running --> stop
+            status = session.cmd_status('service %s stop' % service)
+        elif status == 3:    # is stopped --> ok
+            logging.debug('Service %s stopped already', service)
+        else:                # not sure, try stopping
+            logging.debug('Querying status for service %s resulted in '
+                          'unexpected return code %s. Try stopping it',
+                          service, status)
+            status = session.cmd_status('service %s stop' % service)
+        logging.debug('Stopping service %s resulted in status %s',
+                      service, status)
+        statuses += [status]
+    return statuses
+
+
+def restart_services(session, service_list):
+    """
+    Try restarting all services in given list.
+
+    :param session: virtual machine session
+    :type session: :py:class:`aexpect.ShellSession`
+    :param services: list of services to modify
+    :type services: [str]
+    :returns: statuses for each modified service
+    :rtype: [int]
+    """
+    statuses = []
+    for service in service_list:
+        status = session.cmd_status('service %s status' % service)
+        if status == 0:      # is running --> restart
+            status = session.cmd_status('service %s restart' % service)
+        elif status == 3:    # is stopped --> ok
+            logging.debug('Service %s stopped - starting', service)
+            status = session.cmd_status('service %s start' % service)
+        else:                # not sure, try restarting
+            logging.debug('Querying status for service %s resulted in '
+                          'unexpected return code %s. Try restarting it',
+                          service, status)
+            status = session.cmd_status('service %s restart' % service)
+        logging.debug('Restarting service %s resulted in status %s',
+                      service, status)
+        statuses += [status]
+    return statuses
