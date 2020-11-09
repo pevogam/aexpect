@@ -76,10 +76,8 @@ from aexpect.exceptions import ShellCmdError
 # grep(1)
 ###############################################################################
 
-GREP_FLAGS_KNOWN = ["q", "a", "r", "v"]
 
-
-def grep(session, expr, path, check=True, flags=None):
+def grep(session, expr, path, check=False, flags=None):
     """
     Invoke ``grep`` on guest searching for *expr* in *path*. Throws a
     ``TypeError`` in case the API assumptions are violated.
@@ -95,20 +93,20 @@ def grep(session, expr, path, check=True, flags=None):
     :rtype: bool or str
     """
     flags = flags if flags else ["a"]
-    flagstr = " ".join(["-" + flag for flag in flags if flag in GREP_FLAGS_KNOWN])
+    flagstr = " ".join(["-" + flag for flag in flags if flag.isalnum()])
     grep_command = "grep %s '%s' '%s'" % (flagstr, expr, path)
     status, output = session.cmd_status_output(grep_command)
     if check:
         return status == 0
-    else:
-        if status != 0:
-            raise ShellCmdError(grep_command, status, output)
-        return output
+    if status != 0:
+        raise ShellCmdError(grep_command, status, output)
+    return output
 
 
 ###############################################################################
 # stat(2)
 ###############################################################################
+
 
 def stat(session, path, fmt=None):
     """
@@ -188,6 +186,7 @@ def get_size(session, path):
 # test(1)
 ###############################################################################
 
+
 def test(session, path, flag):
     """
     Wrapper for ``test``.
@@ -247,6 +246,7 @@ def is_nonzero_size_file(session, path):
 ###############################################################################
 # file ops
 ###############################################################################
+
 
 def hash_file(session, filename, method='md5'):
     """
