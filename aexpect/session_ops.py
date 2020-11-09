@@ -32,11 +32,7 @@ environment (i. e. Cygwin) is present.
 
 This module aims to provide convenient wrappers for butter-and-bread
 functionality on a Linux system. Currently, the implemented functions fall
-under four categories: ``grep``, ``stat``, ``test``, and common file ops.
-
-grep:
-Standard case search operations. It is always assumed that binaries in the path
-should be searched (the ``-a`` flag).
+under a few categories: ``stat``, ``test``, common file ops, and utilities.
 
 stat:
 Allows passing an optional format argument (``-c``). Custom wrappers for
@@ -51,6 +47,9 @@ executing simple commands like ls, tar, md5sum, etc. If these operations return
 non-0, a :py:class:`RuntimeError` is raised, containing the commands's error
 message. All functions :py:func:`shlex.quote` their args for better security.
 
+utilities:
+More complex linux utilities for tarball extraction, file hashing, etc.
+
 
 IMPLEMENTATION
 ------------------------------------------------------
@@ -60,6 +59,7 @@ IMPLEMENTATION
 import sys
 import re
 from os.path import join, split as path_split
+import logging
 
 if sys.version_info[0] < 3:
     from six.moves import shlex_quote as quote
@@ -70,37 +70,6 @@ else:
 # from .client import ShellSession
 
 from aexpect.exceptions import ShellCmdError
-
-
-###############################################################################
-# grep(1)
-###############################################################################
-
-
-def grep(session, expr, path, check=False, flags=None):
-    """
-    Invoke ``grep`` on guest searching for *expr* in *path*. Throws a
-    ``TypeError`` in case the API assumptions are violated.
-
-    :param session: session to run the command on
-    :type session: ShellSession
-    :param str expr: search expression
-    :param str path: file to search
-    :param bool check: whether to quietly run grep for a boolean check
-    :param str flags: extra flags passed to ``grep`` on the command line
-    :returns: whether there is a match or not or what ``grep`` emits on stdout
-              if the check mode is disabled
-    :rtype: bool or str
-    """
-    flags = flags if flags else ["a"]
-    flagstr = " ".join(["-" + flag for flag in flags if flag.isalnum()])
-    grep_command = "grep %s '%s' '%s'" % (flagstr, expr, path)
-    status, output = session.cmd_status_output(grep_command)
-    if check:
-        return status == 0
-    if status != 0:
-        raise ShellCmdError(grep_command, status, output)
-    return output
 
 
 ###############################################################################
@@ -248,67 +217,6 @@ def is_nonzero_size_file(session, path):
 ###############################################################################
 
 
-def hash_file(session, filename, method='md5'):
-    """
-    Calculate hash of given file from a session.
-
-    :param session: session to run the command on
-    :type session: ShellSession
-    :param str filename: full path of file that should be hashed
-    :param str method: method for hashing
-    :returns: hash of file, a hex number
-    :rtype: str
-    :raises: :py:class:`RuntimeError` if hash command failed (e.g. file not
-             found) or resulting output does not have expected format
-    :raises: :py:class:`ValueError` if given method is not (yet) supported
-    """
-    if method == 'md5':
-        cmd = 'md5sum'
-        expect_len = 32
-    else:
-        raise ValueError('only method "md5" supported yet')
-
-    # run cmd on shell
-    status, output = session.cmd_status_output(cmd + ' ' + quote(filename))
-    if output:
-        output = output.strip()
-    if status != 0:
-        raise RuntimeError('Could not hash {} using {}: {}'
-                           .format(filename, cmd, output))
-
-    # parse output
-    hash_str = output.split(maxsplit=1)[0].lower()
-
-    # check length and all chars are hex
-    if expect_len and len(hash_str) != expect_len:
-        raise RuntimeError('Resulting hash string has unexpected length {}: {}'
-                           .format(len(hash_str), hash_str))
-    if hash_str.strip('0123456789abcdef'):
-        raise RuntimeError('Resulting hash string has unexpected characters: '
-                           + hash_str)
-    return hash_str
-
-
-def extract_tarball(session, tarball, target_dir):
-    """
-    Extract tarball to given dir from a session.
-
-    :param session: session to run the command on
-    :type session: ShellSession
-    :param str tarball: full path of tar file that should be extracted
-    :param str target_dir: name of directory where tarball should be extracted
-    :raises: :py:class:`RuntimeError` if tar command returned non-null
-    """
-    cmd = 'tar -C {} --strip-components=1 -xapf {}' \
-          .format(quote(target_dir), quote(tarball))
-    status, output = session.cmd_status_output(cmd)
-    if output:
-        output = output.strip()
-    if status != 0:
-        raise RuntimeError('Failed to extract {} to {}: {}'
-                           .format(tarball, target_dir, output))
-
-
 def ls(session, dir_name):  # pylint: disable=C0103
     """
     Run `ls` in given directory through a session.
@@ -368,27 +276,64 @@ def glob(session, glob_pattern):
             if pattern.match(filename)]
 
 
-def cat(session, filename):
+def move(session, source, target):
     """
-    Get contents of a text file from a session.
+    Move file or directory from source to target / Rename source to target.
 
     :param session: session to run the command on
     :type session: ShellSession
-    :param str filename: full path of file
-    :returns: file contents
-    :rtype: str
-    :raises: :py:class:`RuntimeError` if cat command fails
+    :param str source: full path of existing file or directory
+    :param str target: full path of new file or directory
+    :raises: :py:class:`RuntimeError` if mv returns non-zero exit status
 
-    Should only be used for very short files without tabs or other fancy
-    contents. Otherwise better download file or use some other method.
+    Calls `mv source target` through a session. See `man mv` for what source
+    and target can be and what behavior to expect.
     """
-    cmd = 'cat ' + quote(filename)
+    cmd = 'mv {} {}'.format(quote(source), quote(target))
     status, output = session.cmd_status_output(cmd)
-    if output:
-        output = output.strip()
     if status != 0:
-        raise RuntimeError('Failed to cat {}: {}'.format(filename, output))
-    return output
+        raise RuntimeError('Failed to mv {} to {}: {}'
+                           .format(source, target,
+                                   output.strip() if output else ''))
+
+
+def copy(session, source, target):
+    """
+    Copy file or directory from source to target.
+
+    :param session: session to run the command on
+    :type session: ShellSession
+    :param str source: full path of existing file or directory
+    :param str target: full path of new file or directory
+    :raises: :py:class:`RuntimeError` if cp returns non-zero exit status
+
+    Calls `cp source target` through a session. See `man cp` for what source
+    and target can be and what behavior to expect.
+    """
+    cmd = 'cp {} {}'.format(quote(source), quote(target))
+    status, output = session.cmd_status_output(cmd)
+    if status != 0:
+        raise RuntimeError('Failed to cp {} to {}: {}'
+                           .format(source, target,
+                                   output.strip() if output else ''))
+
+
+def remove(session, path):
+    """
+    Remove a directory including its contents.
+
+    :param session: session to run the command on
+    :type session: ShellSession
+    :param str path: directory to remove
+    :raises: :py:class:`RuntimeError` if deletion fails
+
+    Calls `rm -rf`.
+    """
+    cmd = 'rm -rf ' + quote(path)
+    status, output = session.cmd_status_output(cmd)
+    if status != 0:
+        raise RuntimeError('Failed to remove {}: {}'
+                           .format(path, output.strip() if output else ''))
 
 
 def tempdir(session):
@@ -433,61 +378,145 @@ def tempfile(session):
     return output
 
 
-def move(session, source, target):
+def cat(session, filename):
     """
-    Move file or directory from source to target / Rename source to target.
+    Get contents of a text file from a session.
 
     :param session: session to run the command on
     :type session: ShellSession
-    :param str source: full path of existing file or directory
-    :param str target: full path of new file or directory
-    :raises: :py:class:`RuntimeError` if mv returns non-zero exit status
+    :param str filename: full path of file
+    :returns: file contents
+    :rtype: str
+    :raises: :py:class:`RuntimeError` if cat command fails
 
-    Calls `mv source target` through a session. See `man mv` for what source
-    and target can be and what behavior to expect.
+    Should only be used for very short files without tabs or other fancy
+    contents. Otherwise better download file or use some other method.
     """
-    cmd = 'mv {} {}'.format(quote(source), quote(target))
+    cmd = 'cat ' + quote(filename)
     status, output = session.cmd_status_output(cmd)
+    if output:
+        output = output.strip()
     if status != 0:
-        raise RuntimeError('Failed to mv {} to {}: {}'
-                           .format(source, target,
-                                   output.strip() if output else ''))
+        raise RuntimeError('Failed to cat {}: {}'.format(filename, output))
+    return output
 
 
-def copy(session, source, target):
+def sed_replace(session, pattern, replacement, filename):
     """
-    Copy file or directory from source to target.
+    Replace a pattern in a file using sed, raising an error if nothing is found.
+
+    :param session: session of the guest
+    :type session: :py:class:`RemoteSession`
+    :param str pattern: pattern to replace
+    :param str replacement: string to replace the pattern for
+    :param str filename: file with content to be replaced
+    :raises: :py:class:`AssertionError` if nothing was replaced
+
+    Using sed is convenient, but it does not error out when nothing is replaced
+    and this can lead to false-positives when used inside tests.
+    """
+    logging.info("Replacing %s with %s in %s", pattern, replacement, filename)
+    # for lines matching pattern, replace and print them (the p command won't work)
+    cmd = """sed -ri '/%s/{{
+s//%s/g
+w /dev/stdout
+}}' %s""" % (pattern, replacement, filename)
+    old_prompt = session.prompt
+    # for multiline commands we need to consider the leading '> '
+    session.set_prompt("^(?:> )*\\[.*\\][\\#\\$]\\s*$")
+    output = session.cmd(cmd)
+    session.set_prompt(old_prompt)
+    # make sure we have at least one line replaced
+    assert len(output.splitlines()) > 0, "sed did not find any matches for pattern %s" % pattern
+
+
+def grep(session, expr, path, check=False, flags=None):
+    """
+    Invoke ``grep`` on guest searching for *expr* in *path*. Throws a
+    ``TypeError`` in case the API assumptions are violated.
 
     :param session: session to run the command on
     :type session: ShellSession
-    :param str source: full path of existing file or directory
-    :param str target: full path of new file or directory
-    :raises: :py:class:`RuntimeError` if cp returns non-zero exit status
-
-    Calls `cp source target` through a session. See `man cp` for what source
-    and target can be and what behavior to expect.
+    :param str expr: search expression
+    :param str path: file to search
+    :param bool check: whether to quietly run grep for a boolean check
+    :param str flags: extra flags passed to ``grep`` on the command line
+    :returns: whether there is a match or not or what ``grep`` emits on stdout
+              if the check mode is disabled
+    :rtype: bool or str
     """
-    cmd = 'cp {} {}'.format(quote(source), quote(target))
-    status, output = session.cmd_status_output(cmd)
+    flags = flags if flags else ["a"]
+    flagstr = " ".join(["-" + flag for flag in flags if flag.isalnum()])
+    grep_command = "grep %s '%s' '%s'" % (flagstr, expr, path)
+    status, output = session.cmd_status_output(grep_command)
+    if check:
+        return status == 0
     if status != 0:
-        raise RuntimeError('Failed to cp {} to {}: {}'
-                           .format(source, target,
-                                   output.strip() if output else ''))
+        raise ShellCmdError(grep_command, status, output)
+    return output
 
 
-def rmtree(session, path):
+###############################################################################
+# utilities
+###############################################################################
+
+
+def hash_file(session, filename, method='md5'):
     """
-    Remove a directory including its contents.
+    Calculate hash of given file from a session.
 
     :param session: session to run the command on
     :type session: ShellSession
-    :param str path: directory to remove
-    :raises: :py:class:`RuntimeError` if deletion fails
-
-    Calls `rm -rf`.
+    :param str filename: full path of file that should be hashed
+    :param str method: method for hashing
+    :returns: hash of file, a hex number
+    :rtype: str
+    :raises: :py:class:`RuntimeError` if hash command failed (e.g. file not
+             found) or resulting output does not have expected format
+    :raises: :py:class:`ValueError` if given method is not (yet) supported
     """
-    cmd = 'rm -rf ' + quote(path)
-    status, output = session.cmd_status_output(cmd)
+    if method == 'md5':
+        cmd = 'md5sum'
+        expect_len = 32
+    else:
+        raise ValueError('only method "md5" supported yet')
+
+    # run cmd on shell
+    status, output = session.cmd_status_output(cmd + ' ' + quote(filename))
+    if output:
+        output = output.strip()
     if status != 0:
-        raise RuntimeError('Failed to remove {}: {}'
-                           .format(path, output.strip() if output else ''))
+        raise RuntimeError('Could not hash {} using {}: {}'
+                           .format(filename, cmd, output))
+
+    # parse output
+    hash_str = output.split(maxsplit=1)[0].lower()
+
+    # check length and all chars are hex
+    if expect_len and len(hash_str) != expect_len:
+        raise RuntimeError('Resulting hash string has unexpected length {}: {}'
+                           .format(len(hash_str), hash_str))
+    if hash_str.strip('0123456789abcdef'):
+        raise RuntimeError('Resulting hash string has unexpected characters: '
+                           + hash_str)
+    return hash_str
+
+
+def extract_tarball(session, tarball, target_dir):
+    """
+    Extract tarball to given dir from a session.
+
+    :param session: session to run the command on
+    :type session: ShellSession
+    :param str tarball: full path of tar file that should be extracted
+    :param str target_dir: name of directory where tarball should be extracted
+    :raises: :py:class:`RuntimeError` if tar command returned non-null
+    """
+    cmd = 'tar -C {} --strip-components=1 -xapf {}' \
+          .format(quote(target_dir), quote(tarball))
+    status, output = session.cmd_status_output(cmd)
+    if output:
+        output = output.strip()
+    if status != 0:
+        raise RuntimeError('Failed to extract {} to {}: {}'
+                           .format(tarball, target_dir, output))
