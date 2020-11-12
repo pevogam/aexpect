@@ -60,15 +60,11 @@ IMPLEMENTATION
 
 """
 
-import sys
 import re
 from os.path import join, split as path_split
 import logging
 
-if sys.version_info[0] < 3:
-    from six.moves import shlex_quote as quote
-else:
-    from shlex import quote   # pylint: disable=E0611
+from shlex import quote
 
 # Need this import for sphinx and other documentation to produce links later on
 # from .client import ShellSession
