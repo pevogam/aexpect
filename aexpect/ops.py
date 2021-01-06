@@ -61,6 +61,14 @@ from aexpect.exceptions import ShellCmdError
 # from .client import ShellSession
 
 
+def _process_status_output(command, status, output):
+    if output != "":
+        output = output.strip()
+    if status != 0:
+        raise RuntimeError('Failed to {} {}: {}'.format(command, filename, output))
+    return status, output
+
+
 ###############################################################################
 # stat(2)
 ###############################################################################
@@ -229,8 +237,7 @@ def ls(session, dir_name):  # pylint: disable=C0103
     """
     cmd = 'ls -1UNq {}'.format(quote(dir_name))
     status, output = session.cmd_status_output(cmd)
-    if output:
-        output = output.strip()
+    status, output = _process_status_output(status, output)
     if status == 2:      # probably just nothing found
         return []
     if status != 0:
