@@ -1056,6 +1056,7 @@ def copy_files_to(address, client, username, password, port, local_path,
                       using ipv6 linklocal address.)
     :param filesize: size of file will be transferred
     :param directory: True to copy recursively if the directory to scp
+    :param make_dirs: whether to make directories...
     :raise: Whatever remote_scp() raises
     """
     if client == "scp":
