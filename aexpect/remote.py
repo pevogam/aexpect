@@ -48,6 +48,7 @@ import time
 import re
 import os
 import pipes
+import asyncio
 
 from aexpect.client import Expect
 from aexpect.client import RemoteSession
@@ -484,8 +485,9 @@ def wait_for_login(client, host, port, username, password, prompt,
                         user_known_hosts_file=user_known_hosts_file)
 
 
-def _remote_scp(
-        session, password_list, transfer_timeout=600, login_timeout=300):
+def _remote_scp(session, password_list,
+                transfer_timeout=600, login_timeout=300,
+                is_async=True):
     """
     Transfer files using SCP, given a command line.
 
@@ -501,6 +503,7 @@ def _remote_scp(
     :param login_timeout: The maximal time duration (in seconds) to wait for
             each step of the login procedure (i.e. the "Are you sure" prompt or
             the password prompt)
+    :param bool is_async: whether the scp is done via asyncio
     :raise SCPAuthenticationError: If authentication fails
     :raise SCPTransferTimeoutError: If the transfer fails to complete in time
     :raise SCPTransferFailedError: If the process terminates with a nonzero
@@ -512,6 +515,11 @@ def _remote_scp(
     authentication_done = False
 
     scp_type = len(password_list)
+    # TODO: need async version of this function?
+    loop = asyncio.get_event_loop()
+    async def sleep(seconds=1):
+        asyncio.sleep(1)
+    asyncio.ensure_future(sleep(), loop=loop)
 
     while True:
         try:
@@ -542,6 +550,8 @@ def _remote_scp(
                                                  text)
             elif match == 2:  # "lost connection"
                 raise SCPError("SCP client said 'lost connection'", text)
+            # TODO: sleep here
+            # await asyncio.gather(*added_tasks)
         except ExpectTimeoutError as error:
             if authentication_done:
                 raise SCPTransferTimeoutError(error.output) from error
@@ -554,7 +564,7 @@ def _remote_scp(
 
 
 def remote_scp(command, password_list, log_filename=None, log_function=None,
-               transfer_timeout=600, login_timeout=300):
+               transfer_timeout=600, login_timeout=300, is_async=True):
     """
     Transfer files using SCP, given a command line.
 
@@ -580,7 +590,8 @@ def remote_scp(command, password_list, log_filename=None, log_function=None,
         output_params = ()
     with Expect(command, output_func=output_func,
                 output_params=output_params) as session:
-        _remote_scp(session, password_list, transfer_timeout, login_timeout)
+        _remote_scp(session, password_list, transfer_timeout, login_timeout,
+                    is_async)
 
 
 def scp_to_remote(host, port, username, password, local_path, remote_path,
