@@ -70,8 +70,12 @@ import time
 # related to connectivity and perform further development on this utility.
 # os.environ["PYRO_LOGLEVEL"] = "DEBUG"
 try:
-    # noinspection PyPackageRequirements,PyUnresolvedReferences
-    import Pyro4
+    try:
+        # noinspection PyPackageRequirements,PyUnresolvedReferences
+        from Pyro5.compatibility import Pyro4
+    except ImportError:
+        # noinspection PyPackageRequirements,PyUnresolvedReferences
+        import Pyro4
 except ImportError:
     logging.warning("Remote object backend (Pyro4) not found, some functionality"
                     " of the remote door will not be available")
@@ -439,6 +443,13 @@ def set_subcontrol_parameter_object(subcontrol, value):
     LOG.info("Sharing the test parameters over the network")
     Pyro4.config.AUTOPROXY = False
     Pyro4.config.REQUIRE_EXPOSE = False
+    # TODO: Pyro5 no longer has the expose switch and needs manual walking through base classes
+    from Pyro5 import server
+    server.expose(type(params))
+    from collections import UserDict as IterableUserDict
+    server.expose(IterableUserDict)
+    from collections.abc import MutableMapping
+    server.expose(MutableMapping)
     try:
         pyro_daemon = Pyro4.Daemon(host=host_ip, port=1437)
         LOG.debug("Pyro4 daemon started successfully")
@@ -653,9 +664,15 @@ def share_local_object(object_name, whitelist=None, host="localhost", port=9090)
         LOG.debug("Pyro4 name server already started")
     # network unreachable and failed to locate the nameserver error
     except (OSError, Pyro4.errors.NamingError):
-        # noinspection PyPackageRequirements
-        from Pyro4 import naming
-        ns_uri, ns_daemon, _bc_server = naming.startNS(host=host, port=port)
+        # Pyro5 compatibility does not support submodules so we need separate handling
+        try:
+            # noinspection PyPackageRequirements
+            from Pyro5 import nameserver
+            ns_uri, ns_daemon, _bc_server = nameserver.start_ns(host=host, port=port)
+        except ImportError:
+            # noinspection PyPackageRequirements
+            from Pyro4 import naming
+            ns_uri, ns_daemon, _bc_server = naming.startNS(host=host, port=port)
         ns_server = Pyro4.Proxy(ns_uri)
         LOG.debug("Pyro4 name server started successfully with URI %s", ns_uri)
 
@@ -701,7 +718,22 @@ def share_local_object(object_name, whitelist=None, host="localhost", port=9090)
     for cname, cobj in inspect.getmembers(module, inspect.isclass):
         if not whitelist or (object_name, cname) in whitelist:
             setattr(ModuleObject, cname, staticmethod(proxymethod(cobj)))
+            # TODO: expose the module object class for pyro5
+            from Pyro5 import server
+            if not server.is_private_attribute(cname):
+                LOG.info(f"Exposing {object_name}'s class {cname}")
+                try:
+                    ExposedModule = server.expose(cobj)
+                except AttributeError as error:
+                    LOG.warn(error)
+
+    # TODO: some hard-coded classes that we know we need
+    from email.message import Message
+    server.expose(Message)
     local_object = ModuleObject()
+    # TODO: expose the module object class for pyro5
+    from Pyro5 import server
+    server.expose(ModuleObject)
 
     # we should register to the pyro daemon before entering its loop
     uri = pyro_daemon.register(local_object)
