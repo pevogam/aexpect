@@ -629,6 +629,8 @@ def get_remote_object(
         remote_object = Pyro4.Proxy(f"PYRONAME:{object_name}@{host}:{port}")
         # noinspection PyProtectedMember
         remote_object._pyroBind()
+        # TODO: we should at least add new exposed and registered objects in this case
+        LOG.info("Previous remote object server running, reusing it")
     except Pyro4.errors.PyroError as error:
         if not session:
             raise
