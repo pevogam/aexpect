@@ -434,8 +434,18 @@ def grep(session, expr, path, check=False, flags="-a"):
               if the check mode is disabled
     :rtype: bool or str
     :raises: ShellCmdError if the check mode is disabled and status is nonzero
-    """
+
+    TODO: escape more commands from the motivation:
+    Shell injection vulnerability confirmed in ops.grep – expr parameter is not properly escaped.
+    The review comment's concern is valid. In aexpect-1.8.0's ops_linux.py, the grep function constructs the command as:
+    ```
     grep_command = f"grep {flags} '{expr}' {quote(path)}"
+    ```
+    The expr parameter (which receives message from your code) is wrapped only in single quotes without using shlex.quote(). Since single quotes don't allow escaping in shell, an attacker can inject arbitrary shell commands by crafting a message containing a single quote followed by shell metacharacters (e.g., test' || malicious_command').
+    While path is correctly escaped with quote(), the expr parameter remains vulnerable. The same issue exists in the grep_pipe function. This is a real security risk when message and dump_path come from user-configurable parameters.
+    The fix should be applied upstream in aexpect (change '{expr}' to {quote(expr)}), or use a safer wrapper in your code that validates/escapes the message parameter before passing it to ops.grep.
+    """
+    grep_command = f"grep {flags} '{quote(expr)}' {quote(path)}"
     status, output = session.cmd_status_output(grep_command)
     if check:
         return status == 0
