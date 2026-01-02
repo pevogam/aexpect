@@ -110,6 +110,26 @@ class RemoteDoorTest(unittest.TestCase):
             del remote_door.server
             del remote_door.nameserver
 
+    def test_run_remote_control(self):
+        """Test that a remote control file runs properly."""
+        control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
+        mod_control_path = remote_door.set_subcontrol_parameter(control_path, "action", "check")
+        mod_control_path = remote_door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)
+        result = remote_door.run_subcontrol(self.session, mod_control_path)
+
+        local_controls = glob.glob("tmp*.control")
+        remote_controls = glob.glob(os.path.join(remote_door.REMOTE_CONTROL_DIR,
+                                                 "tmp*.control"))
+        self.assertEqual(len(local_controls), len(remote_controls))
+        self.assertEqual(len(remote_controls), 1)
+        self.assertEqual(os.path.basename(local_controls[0]),
+                         os.path.basename(remote_controls[0]))
+        # assert correct parameter and dictionary
+        with open(remote_controls[0], encoding="utf-8") as handle:
+            control_lines = handle.readlines()
+        self.assertIn("result = collections.OrderedDict().get(r'akey')\n",
+                      control_lines)
+
     def test_run_remote_util(self):
         """Test that a remote utility runs properly."""
         result = remote_door.run_remote_util(self.session, "math", "gcd", 2, 3)

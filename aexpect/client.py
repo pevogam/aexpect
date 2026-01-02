@@ -378,6 +378,10 @@ class Spawn:
         Wait for the process to exit and return its exit status, or None
         if the exit status is not available.
         """
+        # TODO: the entire base directory can go missing after the test is finished
+        logging.critical("Checking for lock_server_running_filename")
+        logging.critical(self.lock_server_running_filename)
+        logging.critical(os.path.exists(self.lock_server_running_filename))
         wait_for_lock(self.lock_server_running_filename)
         try:
             with open(
@@ -492,6 +496,9 @@ class Spawn:
 
         :param cont: String to send to the child process.
         """
+        #import time
+        #with open("/tmp/" + str(time.time()), "wb") as f:
+        #    f.write(cont.encode(self.encoding))
         try:
             proc_input_pipe = os.open(self.inpipe_filename, os.O_RDWR)
             os.write(proc_input_pipe, cont.encode(self.encoding))
