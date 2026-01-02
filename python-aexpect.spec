@@ -36,8 +36,10 @@ Source0: %{url}/archive/%{commit}/%{gittar}
 %endif
 
 BuildArch: noarch
+BuildRequires: pyproject-rpm-macros
 BuildRequires: python3-devel
 BuildRequires: python3-setuptools
+BuildRequires: python3-setuptools-scm
 
 %description
 Aexpect is a python library used to control interactive applications, very
@@ -59,7 +61,12 @@ sftp, telnet, among others.
 %autosetup -n aexpect-%{commit} -p 1
 %endif
 
+%generate_buildrequires
+export SETUPTOOLS_SCM_PRETEND_VERSION=%{version}
+%pyproject_buildrequires
+
 %build
+export SETUPTOOLS_SCM_PRETEND_VERSION=%{version}
 %pyproject_wheel
 
 %install

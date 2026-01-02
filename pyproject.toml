@@ -44,6 +44,7 @@ include = ["aexpect*"]
 [tool.setuptools_scm]
 version_scheme = "post-release"
 local_scheme = "node-and-date"
+write_to = "aexpect/_version.py"
 
 [tool.black]
 line-length = 79
