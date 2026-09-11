@@ -318,17 +318,30 @@ class TestRSSCopyRetry(unittest.TestCase):
             (remote.copy_files_to, "FileUploadClient", "upload"),
             (remote.copy_files_from, "FileDownloadClient", "download"),
         )
+        self.retry_errors = (
+            (
+                True,
+                remote.rss_client.FileTransferConnectError(
+                    "Connection failed"
+                ),
+            ),
+            (
+                False,
+                remote.rss_client.FileTransferTimeoutError("Transfer stalled"),
+            ),
+            (
+                False,
+                remote.rss_client.FileTransferSocketError("Connection lost"),
+            ),
+        )
         sleep_patch = mock.patch("aexpect.remote.time.sleep")
         self.sleep = sleep_patch.start()
         self.addCleanup(sleep_patch.stop)
 
     def test_connection_and_transfer_retry_until_success(self):
-        error = remote.rss_client.FileTransferError("Transfer failed")
         for method, client_class, operation in self.cases:
-            for connection_failure in (False, True):
-                with self.subTest(
-                    client=client_class, connection=connection_failure
-                ):
+            for connection_failure, error in self.retry_errors:
+                with self.subTest(client=client_class, error=error):
                     self.sleep.reset_mock()
                     first, second = mock.Mock(), mock.Mock()
                     getattr(first, operation).side_effect = error
@@ -348,13 +361,12 @@ class TestRSSCopyRetry(unittest.TestCase):
                     self.sleep.assert_called_once_with(1)
 
     def test_connection_and_transfer_attempts_exhausted(self):
-        error = remote.rss_client.FileTransferError("Transfer failed")
         for method, client_class, operation in self.cases:
-            for connection_failure in (False, True):
+            for connection_failure, error in self.retry_errors:
                 for attempts in (1, 3):
                     with self.subTest(
                         client=client_class,
-                        connection=connection_failure,
+                        error=error,
                         attempts=attempts,
                     ):
                         self.sleep.reset_mock()
@@ -375,6 +387,32 @@ class TestRSSCopyRetry(unittest.TestCase):
                             self.sleep.call_args_list,
                             [mock.call(1)] * (attempts - 1),
                         )
+
+    def test_other_errors_do_not_retry(self):
+        for method, client_class, operation in self.cases:
+            for error in (
+                remote.rss_client.FileTransferError("Transfer failed"),
+                remote.rss_client.FileTransferNotFoundError("No such file"),
+                remote.rss_client.FileTransferProtocolError("Invalid message"),
+                remote.rss_client.FileTransferServerError("Permission denied"),
+                TypeError("Invalid argument"),
+                ValueError("Invalid value"),
+            ):
+                with self.subTest(client=client_class, error=error):
+                    self.sleep.reset_mock()
+                    with mock.patch.object(
+                        remote.rss_client, client_class
+                    ) as client:
+                        transfer = getattr(client.return_value, operation)
+                        transfer.side_effect = error
+                        with self.assertRaises(type(error)) as raised:
+                            method(*self.args, attempts=3)
+                        self.assertIs(raised.exception, error)
+                        client.assert_called_once_with("host", 22, None)
+                        transfer.assert_called_once_with(
+                            "/source", "/destination", 600
+                        )
+                    self.sleep.assert_not_called()
 
 
 class TestTransferSessionCleanup(unittest.TestCase):

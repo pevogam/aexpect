@@ -1643,7 +1643,11 @@ def copy_files_to(
                 fdclient.upload(local_path, remote_path, timeout)
                 fdclient.close()
                 return  # transfer is successful
-            except Exception as error:  # pylint: disable=broad-except
+            except (
+                rss_client.FileTransferConnectError,
+                rss_client.FileTransferTimeoutError,
+                rss_client.FileTransferSocketError,
+            ) as error:
                 if attempt < attempts:
                     LOG.debug(
                         "RSS upload failed on attempt %d/%d, retrying: %s",
@@ -1747,7 +1751,11 @@ def copy_files_from(
                 fdclient.download(remote_path, local_path, timeout)
                 fdclient.close()
                 return  # transfer is successful
-            except Exception as error:  # pylint: disable=broad-except
+            except (
+                rss_client.FileTransferConnectError,
+                rss_client.FileTransferTimeoutError,
+                rss_client.FileTransferSocketError,
+            ) as error:
                 if attempt < attempts:
                     LOG.debug(
                         "RSS download failed on attempt %d/%d, retrying: %s",
