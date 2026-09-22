@@ -18,6 +18,7 @@ import os
 import random
 import string
 import sys
+import time
 import unittest
 
 from aexpect import client
@@ -191,6 +192,89 @@ class CommandsTests(unittest.TestCase):
             fds_before,
             msg="fd leak: Closing the session didn't close "
             "the file descriptors",
+        )
+
+
+class EncodingTest(unittest.TestCase):
+
+    TEXT = "嗨😀"
+    MAX_OFFSET = 10
+
+    def _multibyte_write_cmd(self, offset, count=1):
+        """Build a Python command that writes multibyte text to stdout."""
+        encoded = self.TEXT.encode("utf-8")
+        reps = 1024 // len(encoded) + 1
+        writes = "; ".join(["f.write(t); f.flush()"] * count)
+        return (
+            f"import os,sys; t=b' '*{offset}+{encoded!r}*{reps}+b'\\n'; "
+            f"f=os.fdopen(sys.stdout.fileno(),'wb',closefd=False); {writes}"
+        )
+
+    @unittest.skipUnless(os.name == "posix", "Unix/Linux/macOS only")
+    def test_shell(self):
+        """Test multibyte decoding in ShellSession across buffer boundaries."""
+        sess = client.ShellSession("/bin/sh")
+        sess.cmd_output("echo init")
+        lengths = []
+        for offset in range(self.MAX_OFFSET):
+            cmd = self._multibyte_write_cmd(offset)
+            result = sess.cmd_output(f'{sys.executable} -c "{cmd}"').lstrip()
+            self.assertTrue(
+                result.startswith(self.TEXT),
+                f"offset {offset}: unexpected start: {result[:20]!r}",
+            )
+            lengths.append(len(result))
+        sess.close()
+        self.assertTrue(lengths, "No output collected")
+        self.assertEqual(
+            len(set(lengths)),
+            1,
+            f"Output lengths vary across offsets: {lengths}",
+        )
+
+    @unittest.skipUnless(os.name == "posix", "Unix/Linux/macOS only")
+    def test_tail(self):
+        """Test multibyte decoding in Tail across buffer boundaries."""
+        tail_lines = 3
+        lengths = []
+        output_buffer = []
+        for offset in range(self.MAX_OFFSET):
+            output_buffer = []
+            terminated = False
+
+            def on_output(text):
+                nonlocal output_buffer
+                output_buffer.append(text)
+
+            def on_terminate(_status):
+                nonlocal terminated
+                terminated = True
+
+            cmd = self._multibyte_write_cmd(offset, count=tail_lines)
+            tail = client.Tail(
+                f'{sys.executable} -c "{cmd}"',
+                output_func=on_output,
+                termination_func=on_terminate,
+            )
+            for _ in range(1000):
+                if terminated:
+                    break
+                time.sleep(0.01)
+            tail.close()
+            for line in output_buffer:
+                if line.startswith("(Process terminated "):
+                    continue
+                stripped = line.lstrip()
+                self.assertTrue(
+                    stripped.startswith(self.TEXT),
+                    f"offset {offset}: unexpected start: {stripped[:20]!r}",
+                )
+                lengths.append(len(stripped))
+        self.assertTrue(lengths, "No output collected")
+        self.assertEqual(
+            len(set(lengths)),
+            1,
+            f"Output lengths vary across offsets: {lengths}",
         )
 
 
